@@ -24,6 +24,7 @@
   "scripts": {
     "build": "tsdown",
     "dev": "bun run --watch ./src/main.ts",
+    "explore-thinking": "bun run ./scripts/explore-thinking.ts",
     "knip": "knip-bun",
     "lint": "eslint --cache",
     "lint:all": "eslint --cache .",
