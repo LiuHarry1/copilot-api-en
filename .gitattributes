@@ -1,0 +1,5 @@
+# Ensure shell scripts always use LF line endings, even on Windows checkouts.
+# This prevents the "exec /entrypoint.sh: no such file or directory" error
+# inside Docker, which happens when the shebang ends with CRLF.
+*.sh text eol=lf
+entrypoint.sh text eol=lf
