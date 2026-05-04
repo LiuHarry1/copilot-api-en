@@ -110,7 +110,9 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     }
   }
 
-  consola.box(`Usage endpoint: ${serverUrl}/usage`)
+  consola.box(
+    `API docs: ${serverUrl}/docs (OpenAPI: ${serverUrl}/openapi.json)\nUsage: ${serverUrl}/usage`,
+  )
 
   serve({
     fetch: server.fetch as ServerHandler,

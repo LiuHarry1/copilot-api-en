@@ -31,9 +31,10 @@ A reverse-engineered proxy for the GitHub Copilot API that exposes it as an Open
 
 ## Features
 
-- **OpenAI & Anthropic Compatibility**: Exposes GitHub Copilot as an OpenAI-compatible (`/v1/chat/completions`, `/v1/models`, `/v1/embeddings`) and Anthropic-compatible (`/v1/messages`) API.
+- **OpenAI & Anthropic Compatibility**: Exposes GitHub Copilot as an OpenAI-compatible API (chat completions, models, embeddings, responses) and Anthropic-compatible `POST /v1/messages`.
+- **Interactive API docs**: When the server is running, open **`/docs`** (Swagger UI) or **`/openapi.json`** for the bundled OpenAPI description.
 - **Claude Code Integration**: Easily configure and launch [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) to use Copilot as its backend with a simple command-line flag (`--claude-code`).
-- **Usage Dashboard**: A web-based dashboard to monitor your Copilot API usage, view quotas, and see detailed statistics.
+- **Usage viewer**: A separate static page (linked when you start the server) charts Copilot quota/usage from your local `GET /usage` endpoint.
 - **Rate Limit Control**: Manage API usage with rate-limiting options (`--rate-limit`) and a waiting mechanism (`--wait`) to prevent errors from rapid requests.
 - **Manual Request Approval**: Manually approve or deny each API request for fine-grained control over usage (`--manual`).
 - **Token Visibility**: Option to display GitHub and Copilot tokens during authentication and refresh for debugging (`--show-token`).
@@ -85,10 +86,10 @@ docker run -p 4141:4141 -v $(pwd)/copilot-data:/root/.local/share/copilot-api co
 You can pass the GitHub token directly to the container using environment variables:
 
 ```sh
-# Build with GitHub token
-docker build --build-arg GH_TOKEN=your_github_token_here -t copilot-api .
+# Build image (no token required at build time)
+docker build -t copilot-api .
 
-# Run with GitHub token
+# Run with GitHub token (read by entrypoint at container start)
 docker run -p 4141:4141 -e GH_TOKEN=your_github_token_here copilot-api
 
 # Run with additional options
@@ -111,10 +112,9 @@ services:
 
 The Docker image includes:
 
-- Multi-stage build for optimized image size
-- Non-root user for enhanced security
-- Health check for container monitoring
-- Pinned base image version for reproducible builds
+- Multi-stage build for a smaller runtime image
+- A `HEALTHCHECK` that probes `GET /` on port 4141
+- Pinned Bun base image tags in the Dockerfile for reproducible builds
 
 ## Using with npx
 
@@ -179,35 +179,44 @@ The following command line options are available for the `start` command:
 
 ## API Endpoints
 
-The server exposes several endpoints to interact with the Copilot API. It provides OpenAI-compatible endpoints and now also includes support for Anthropic-compatible endpoints, allowing for greater flexibility with different tools and services.
+The server exposes OpenAI-compatible routes (with or without the `/v1` prefix for most of them), Anthropic-compatible chat routes, and a usage JSON endpoint.
 
-### OpenAI Compatible Endpoints
+For the same OpenAI-style handlers, these paths are equivalent (pick one style your client expects):
 
-These endpoints mimic the OpenAI API structure.
+- `POST /chat/completions` and `POST /v1/chat/completions`
+- `GET /models` and `GET /v1/models`
+- `POST /embeddings` and `POST /v1/embeddings`
+- `POST /responses` and `POST /v1/responses`
+
+### OpenAI compatible endpoints
 
 | Endpoint                    | Method | Description                                               |
 | --------------------------- | ------ | --------------------------------------------------------- |
 | `POST /v1/chat/completions` | `POST` | Creates a model response for the given chat conversation. |
 | `GET /v1/models`            | `GET`  | Lists the currently available models.                     |
-| `POST /v1/embeddings`       | `POST` | Creates an embedding vector representing the input text.  |
+| `POST /v1/embeddings`       | `POST` | Creates embedding vectors for the given input text.       |
+| `POST /v1/responses`        | `POST` | OpenAI Responses API–compatible endpoint (streaming supported). |
 
-### Anthropic Compatible Endpoints
-
-These endpoints are designed to be compatible with the Anthropic Messages API.
+### Anthropic compatible endpoints
 
 | Endpoint                         | Method | Description                                                  |
 | -------------------------------- | ------ | ------------------------------------------------------------ |
 | `POST /v1/messages`              | `POST` | Creates a model response for a given conversation.           |
 | `POST /v1/messages/count_tokens` | `POST` | Calculates the number of tokens for a given set of messages. |
 
-### Usage Monitoring Endpoints
+### Documentation & health
 
-New endpoints for monitoring your Copilot usage and quotas.
+| Endpoint            | Method | Description                                   |
+| ------------------- | ------ | --------------------------------------------- |
+| `GET /`             | `GET`  | Plain-text health check (`Server running`).   |
+| `GET /docs`         | `GET`  | Swagger UI (interactive API documentation).   |
+| `GET /openapi.json` | `GET`  | OpenAPI 3.0 JSON for Swagger UI and tooling. |
 
-| Endpoint     | Method | Description                                                  |
-| ------------ | ------ | ------------------------------------------------------------ |
-| `GET /usage` | `GET`  | Get detailed Copilot usage statistics and quota information. |
-| `GET /token` | `GET`  | Get the current Copilot token being used by the API.         |
+### Copilot usage (JSON)
+
+| Endpoint     | Method | Description                                                               |
+| ------------ | ------ | ------------------------------------------------------------------------- |
+| `GET /usage` | `GET`  | Copilot usage and quota JSON (same payload the external usage viewer uses). |
 
 ## Example Usage
 
@@ -265,9 +274,8 @@ After starting the server, a URL to the Copilot Usage Dashboard will be displaye
     ```sh
     npx copilot-api@latest start
     ```
-2.  The server will output a URL to the usage viewer. Copy and paste this URL into your browser. It will look something like this:
+2.  The server will print a URL to the usage viewer in the console. Open it in your browser; it looks like:
     `https://ericc-ch.github.io/copilot-api?endpoint=http://localhost:4141/usage`
-    - If you use the `start.bat` script on Windows, this page will open automatically.
 
 The dashboard provides a user-friendly interface to view your Copilot usage data:
 

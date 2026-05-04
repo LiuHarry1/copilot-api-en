@@ -1,6 +1,9 @@
+import { swaggerUI } from "@hono/swagger-ui"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { logger } from "hono/logger"
+
+import { openApiDocument } from "~/lib/openapi-spec"
 
 import { completionRoutes } from "./routes/chat-completions/route"
 import { embeddingRoutes } from "./routes/embeddings/route"
@@ -15,6 +18,9 @@ server.use(logger())
 server.use(cors())
 
 server.get("/", (c) => c.text("Server running"))
+
+server.get("/openapi.json", (c) => c.json(openApiDocument))
+server.get("/docs", swaggerUI({ url: "/openapi.json" }))
 
 server.route("/chat/completions", completionRoutes)
 server.route("/models", modelRoutes)
