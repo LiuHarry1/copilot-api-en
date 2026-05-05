@@ -26,10 +26,26 @@ export interface ResponsesPayload {
   [key: string]: unknown
 }
 
+function responsesPayloadHasImage(input: unknown): boolean {
+  if (!Array.isArray(input)) return false
+  for (const item of input) {
+    if (!item || typeof item !== "object") continue
+    const content = (item as { content?: unknown }).content
+    if (!Array.isArray(content)) continue
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue
+      if ((part as { type?: string }).type === "input_image") return true
+    }
+  }
+  return false
+}
+
 export const createResponses = async (
   payload: ResponsesPayload,
 ): Promise<Response> => {
   if (!state.copilotToken) throw new Error("Copilot token not found")
+
+  const enableVision = responsesPayloadHasImage(payload.input)
 
   const isAgentCall = (() => {
     const input = payload.input
@@ -49,7 +65,7 @@ export const createResponses = async (
   })()
 
   const headers: Record<string, string> = {
-    ...copilotHeaders(state, false),
+    ...copilotHeaders(state, enableVision),
     "X-Initiator": isAgentCall ? "agent" : "user",
   }
 
