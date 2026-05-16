@@ -6,6 +6,7 @@ import { streamSSE, type SSEMessage } from "hono/streaming"
 import { awaitApproval } from "~/lib/approval"
 import { isReasoningModel } from "~/lib/model-capabilities"
 import { checkRateLimit } from "~/lib/rate-limit"
+import { startSseHeartbeat } from "~/lib/sse-heartbeat"
 import { state } from "~/lib/state"
 import { getTokenCount } from "~/lib/tokenizer"
 import { isNullish } from "~/lib/utils"
@@ -61,7 +62,9 @@ export async function handleCompletion(c: Context) {
     consola.debug("Set max_tokens to:", JSON.stringify(payload.max_tokens))
   }
 
-  const response = await createChatCompletions(payload)
+  const response = await createChatCompletions(payload, {
+    signal: c.req.raw.signal,
+  })
 
   if (isNonStreaming(response)) {
     consola.debug("Non-streaming response:", JSON.stringify(response))
@@ -69,10 +72,19 @@ export async function handleCompletion(c: Context) {
   }
 
   consola.debug("Streaming response")
+  c.header("X-Accel-Buffering", "no")
   return streamSSE(c, async (stream) => {
-    for await (const chunk of response) {
-      consola.debug("Streaming chunk:", JSON.stringify(chunk))
-      await stream.writeSSE(chunk as SSEMessage)
+    const heartbeat = startSseHeartbeat(stream)
+    try {
+      for await (const chunk of response) {
+        if (stream.aborted || stream.closed) break
+        consola.debug("Streaming chunk:", JSON.stringify(chunk))
+        await stream.writeSSE(chunk as SSEMessage)
+      }
+    } catch (err) {
+      consola.error("Chat completions upstream stream error:", err)
+    } finally {
+      heartbeat.stop()
     }
   })
 }

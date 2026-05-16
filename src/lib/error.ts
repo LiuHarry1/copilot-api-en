@@ -3,6 +3,8 @@ import type { ContentfulStatusCode } from "hono/utils/http-status"
 
 import consola from "consola"
 
+import { isTerminatedError } from "./upstream"
+
 export class HTTPError extends Error {
   response: Response
 
@@ -32,6 +34,21 @@ export async function forwardError(c: Context, error: unknown) {
         },
       },
       error.response.status as ContentfulStatusCode,
+    )
+  }
+
+  if (isTerminatedError(error)) {
+    return c.json(
+      {
+        error: {
+          message:
+            "Upstream connection terminated by the remote (socket closed). "
+            + "This is usually transient — please retry. "
+            + `Original: ${(error as Error).message}`,
+          type: "upstream_terminated",
+        },
+      },
+      502,
     )
   }
 

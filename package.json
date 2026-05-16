@@ -59,6 +59,7 @@
     "@echristian/eslint-config": "^0.0.54",
     "@types/bun": "^1.2.23",
     "@types/proxy-from-env": "^1.0.4",
+    "baseline-browser-mapping": "^2.10.29",
     "bumpp": "^10.2.3",
     "eslint": "^9.37.0",
     "knip": "^5.64.1",

@@ -5,6 +5,7 @@ import { stream } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
 import { checkRateLimit } from "~/lib/rate-limit"
+import { startSseHeartbeat } from "~/lib/sse-heartbeat"
 import { state } from "~/lib/state"
 import {
   createResponses,
@@ -22,7 +23,9 @@ export async function handleResponses(c: Context) {
 
   if (state.manualApprove) await awaitApproval()
 
-  const upstream = await createResponses(payload)
+  const upstream = await createResponses(payload, {
+    signal: c.req.raw.signal,
+  })
 
   const isStream =
     payload.stream === true
@@ -42,6 +45,9 @@ export async function handleResponses(c: Context) {
   c.header("Content-Type", "text/event-stream")
   c.header("Cache-Control", "no-cache")
   c.header("Connection", "keep-alive")
+  // Disable buffering at any intermediate proxy (nginx, etc.) so heartbeats
+  // and tokens reach the client immediately.
+  c.header("X-Accel-Buffering", "no")
 
   return stream(c, async (writer) => {
     const body = upstream.body
@@ -50,7 +56,10 @@ export async function handleResponses(c: Context) {
       return
     }
 
+    const heartbeat = startSseHeartbeat(writer)
+
     writer.onAbort(async () => {
+      heartbeat.stop()
       try {
         await body.cancel()
       } catch {
@@ -88,7 +97,15 @@ export async function handleResponses(c: Context) {
 
       buffer += decoder.decode()
       if (buffer.length > 0) await flushBlock(buffer)
+    } catch (err) {
+      consola.error("Responses upstream stream error:", err)
+      try {
+        await body.cancel()
+      } catch {
+        // ignore
+      }
     } finally {
+      heartbeat.stop()
       reader.releaseLock()
     }
   })

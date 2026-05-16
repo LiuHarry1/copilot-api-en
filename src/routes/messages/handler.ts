@@ -5,6 +5,7 @@ import { streamSSE } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
 import { checkRateLimit } from "~/lib/rate-limit"
+import { startSseHeartbeat } from "~/lib/sse-heartbeat"
 import { state } from "~/lib/state"
 import {
   createChatCompletions,
@@ -38,7 +39,9 @@ export async function handleCompletion(c: Context) {
     await awaitApproval()
   }
 
-  const response = await createChatCompletions(openAIPayload)
+  const response = await createChatCompletions(openAIPayload, {
+    signal: c.req.raw.signal,
+  })
 
   if (isNonStreaming(response)) {
     consola.debug(
@@ -54,7 +57,9 @@ export async function handleCompletion(c: Context) {
   }
 
   consola.debug("Streaming response from Copilot")
+  c.header("X-Accel-Buffering", "no")
   return streamSSE(c, async (stream) => {
+    const heartbeat = startSseHeartbeat(stream)
     const streamState: AnthropicStreamState = {
       messageStartSent: false,
       contentBlockIndex: 0,
@@ -62,26 +67,33 @@ export async function handleCompletion(c: Context) {
       toolCalls: {},
     }
 
-    for await (const rawEvent of response) {
-      consola.debug("Copilot raw stream event:", JSON.stringify(rawEvent))
-      if (rawEvent.data === "[DONE]") {
-        break
-      }
+    try {
+      for await (const rawEvent of response) {
+        if (stream.aborted || stream.closed) break
+        consola.debug("Copilot raw stream event:", JSON.stringify(rawEvent))
+        if (rawEvent.data === "[DONE]") {
+          break
+        }
 
-      if (!rawEvent.data) {
-        continue
-      }
+        if (!rawEvent.data) {
+          continue
+        }
 
-      const chunk = JSON.parse(rawEvent.data) as ChatCompletionChunk
-      const events = translateChunkToAnthropicEvents(chunk, streamState)
+        const chunk = JSON.parse(rawEvent.data) as ChatCompletionChunk
+        const events = translateChunkToAnthropicEvents(chunk, streamState)
 
-      for (const event of events) {
-        consola.debug("Translated Anthropic event:", JSON.stringify(event))
-        await stream.writeSSE({
-          event: event.type,
-          data: JSON.stringify(event),
-        })
+        for (const event of events) {
+          consola.debug("Translated Anthropic event:", JSON.stringify(event))
+          await stream.writeSSE({
+            event: event.type,
+            data: JSON.stringify(event),
+          })
+        }
       }
+    } catch (err) {
+      consola.error("Anthropic-translated upstream stream error:", err)
+    } finally {
+      heartbeat.stop()
     }
   })
 }

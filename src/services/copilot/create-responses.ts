@@ -3,6 +3,7 @@ import consola from "consola"
 import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
+import { fetchUpstream } from "~/lib/upstream"
 
 export interface ResponsesPayload {
   model: string
@@ -42,6 +43,7 @@ function responsesPayloadHasImage(input: unknown): boolean {
 
 export const createResponses = async (
   payload: ResponsesPayload,
+  options: { signal?: AbortSignal } = {},
 ): Promise<Response> => {
   if (!state.copilotToken) throw new Error("Copilot token not found")
 
@@ -69,10 +71,12 @@ export const createResponses = async (
     "X-Initiator": isAgentCall ? "agent" : "user",
   }
 
-  const response = await fetch(`${copilotBaseUrl(state)}/responses`, {
+  const response = await fetchUpstream(`${copilotBaseUrl(state)}/responses`, {
     method: "POST",
     headers,
     body: JSON.stringify(payload),
+    signal: options.signal,
+    label: "responses",
   })
 
   if (!response.ok) {

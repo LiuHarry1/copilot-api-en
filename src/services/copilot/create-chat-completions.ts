@@ -5,15 +5,17 @@ import { copilotHeaders, copilotBaseUrl } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { normalizeTokenLimitField } from "~/lib/model-capabilities"
 import { state } from "~/lib/state"
+import { fetchUpstream } from "~/lib/upstream"
 
 export const createChatCompletions = async (
   payload: ChatCompletionsPayload,
+  options: { signal?: AbortSignal } = {},
 ) => {
   if (!state.copilotToken) throw new Error("Copilot token not found")
 
-  payload = normalizeTokenLimitField(payload)
+  const normalizedPayload = normalizeTokenLimitField(payload)
 
-  const enableVision = payload.messages.some(
+  const enableVision = normalizedPayload.messages.some(
     (x) =>
       typeof x.content !== "string"
       && x.content?.some((x) => x.type === "image_url"),
@@ -21,7 +23,7 @@ export const createChatCompletions = async (
 
   // Agent/user check for X-Initiator header
   // Determine if any message is from an agent ("assistant" or "tool")
-  const isAgentCall = payload.messages.some((msg) =>
+  const isAgentCall = normalizedPayload.messages.some((msg) =>
     ["assistant", "tool"].includes(msg.role),
   )
 
@@ -31,18 +33,23 @@ export const createChatCompletions = async (
     "X-Initiator": isAgentCall ? "agent" : "user",
   }
 
-  const response = await fetch(`${copilotBaseUrl(state)}/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-  })
+  const response = await fetchUpstream(
+    `${copilotBaseUrl(state)}/chat/completions`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(normalizedPayload),
+      signal: options.signal,
+      label: "chat-completions",
+    },
+  )
 
   if (!response.ok) {
     consola.error("Failed to create chat completions", response)
     throw new HTTPError("Failed to create chat completions", response)
   }
 
-  if (payload.stream) {
+  if (normalizedPayload.stream) {
     return events(response)
   }
 
